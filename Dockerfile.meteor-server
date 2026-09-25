@@ -2,7 +2,7 @@
 # source: https://github.com/disney/meteor-base/blob/master/example/default.dockerfile
 
 # The tag here should match the Meteor version of your app, per .meteor/release
-FROM geoffreybooth/meteor-base:2.12 AS meteor-base
+FROM geoffreybooth/meteor-base:2.12@sha256:d8348a5968df672e5512fe7edee4ed1b0246739ce9adf7013b67175aecee8be9 AS meteor-base
 
 ARG BUILD_SOURCE_PATH=./meteor-server
 
@@ -10,7 +10,7 @@ ARG BUILD_SOURCE_PATH=./meteor-server
 COPY ${BUILD_SOURCE_PATH}/package*.json $APP_SOURCE_FOLDER/
 
 # npm >= 7 required for workspaces
-RUN meteor npm install -g npm@7
+RUN meteor npm install -g npm@7.24.2
 
 # copy interkit-packages
 # COPY --from=interkit-packages /packages /packages
@@ -24,7 +24,7 @@ COPY ${BUILD_SOURCE_PATH} $APP_SOURCE_FOLDER/
 RUN bash $SCRIPTS_FOLDER/build-meteor-bundle.sh
 
 # Use the specific version of Node expected by your Meteor release, per https://docs.meteor.com/changelog.html; this is expected for Meteor 2.0
-FROM node:14-alpine
+FROM node:14-alpine@sha256:434215b487a329c9e867202ff89e704d3a75e554822e07f3e0c0f9e606121b33
 
 ENV APP_BUNDLE_FOLDER /opt/bundle
 ENV SCRIPTS_FOLDER /docker

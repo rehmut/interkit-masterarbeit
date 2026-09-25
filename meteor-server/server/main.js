@@ -19,6 +19,7 @@ import './methods/themeMethods.js';
 
 import { Projects } from '../imports/collections.js';
 import { seedUser } from '../imports/userUtils.js';
+import { seedAudioguide } from './seedAudioguide.js';
 
 import { setupWebPush, webPushPublicKey } from '../imports/pushnotifications.js';
 
@@ -35,6 +36,8 @@ Meteor.startup(() => {
 
   // setup bundler user
   seedUser('bundler', process.env.BUNDLER_PASSWORD, 'bundler');
+
+  seedAudioguide();
 
   // reset admin UI
   Projects.update(

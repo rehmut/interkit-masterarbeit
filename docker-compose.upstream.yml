@@ -1,0 +1,135 @@
+version: '3.2'
+
+services:
+
+  server:
+    image: interkit/server:${INTERKIT_IMAGE_TAG}
+    restart: always
+    build:
+      context: ./
+      dockerfile: Dockerfile.meteor-server
+      args:
+      - INTERKIT_IMAGE_TAG=${INTERKIT_IMAGE_TAG}
+    expose:
+      - 3000
+    volumes:
+      - mediafiles:/var/mediafiles
+      - credentials:/var/credentials
+    depends_on:
+      - mongo
+    environment:
+      ROOT_URL: $INTERKIT_SERVER_URL
+      MONGO_URL: mongodb://mongo:27017/meteor
+      MONGO_OPLOG_URL: mongodb://mongo:27017/local?replicaSet=meteor&directConnection=true&retryWrites=true
+      MEDIAFILES_PATH: /var/mediafiles
+      WEBPUSH_CREDENTIALS_PATH: /var/credentials/webpush.json
+      PORT: 3000
+      BUNDLER_URL: $INTERKIT_BUNDLER_URL
+      BUNDLER_PASSWORD: $INTERKIT_BUNDLER_PASSWORD
+      ADMIN_PASSWORD: $INTERKIT_ADMIN_PASSWORD
+      INTERKIT_PLAYGROUND_RESET_TIMESTAMP: $INTERKIT_PLAYGROUND_RESET_TIMESTAMP
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontproxy"
+      - "traefik.http.routers.server-${INTERKIT_IMAGE_TAG}.rule=Host(`${INTERKIT_SERVER_HOST}`)"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - frontproxy
+      - default
+
+  mongo:
+    image: bitnami/mongodb:latest
+    restart: always
+    volumes:
+      - db-data:/bitnami/mongodb
+    networks:
+      - default
+    environment:
+      MONGODB_REPLICA_SET_MODE: primary
+      MONGODB_REPLICA_SET_NAME: meteor
+      MONGODB_ADVERTISED_HOSTNAME: mongo
+      #MONGODB_ROOT_USER: root
+      #MONGODB_ROOT_PASSWORD: password123
+      #MONGODB_REPLICA_SET_KEY: replicasetkey123
+      ALLOW_EMPTY_PASSWORD: "yes"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  admin:
+    image: interkit/admin:${INTERKIT_IMAGE_TAG}
+    restart: always
+    build:
+      context: ./
+      dockerfile: ./Dockerfile.svelte-admin
+      args:
+      - INTERKIT_IMAGE_TAG=${INTERKIT_IMAGE_TAG}
+    expose:
+      - 5000
+    environment:
+      INTERKIT_SERVER_WEBSOCKETS_URL: $INTERKIT_SERVER_WEBSOCKETS_URL
+      INTERKIT_SERVER_URL: $INTERKIT_SERVER_URL
+      INTERKIT_IMAGE_TAG: $INTERKIT_IMAGE_TAG
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontproxy"
+      - "traefik.http.routers.admin-${INTERKIT_IMAGE_TAG}.rule=Host(`${INTERKIT_ADMIN_HOST}`)"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - frontproxy
+      - default
+
+  bundler:
+    image: interkit/bundler:${INTERKIT_IMAGE_TAG}
+    restart: always
+    build:
+      context: ./
+      dockerfile: ./Dockerfile.app-bundler
+      args:
+      - INTERKIT_IMAGE_TAG=${INTERKIT_IMAGE_TAG}
+    expose:
+      - 4000
+    volumes:
+      - ./repositories/projects:/var/repositories/projects
+    environment:
+      PORT: 4000
+      ADMIN_PASSWORD: $INTERKIT_ADMIN_PASSWORD
+      BUNDLER_PASSWORD: $INTERKIT_BUNDLER_PASSWORD
+      INTERKIT_BUNDLER_URL: $INTERKIT_BUNDLER_URL
+      INTERKIT_SERVER_WEBSOCKETS_URL: $INTERKIT_SERVER_WEBSOCKETS_URL
+      INTERKIT_SERVER_SERVERSIDE_WEBSOCKETS_URL: $INTERKIT_SERVER_SERVERSIDE_WEBSOCKETS_URL
+      INTERKIT_SERVER_URL: $INTERKIT_SERVER_URL
+      INTERKIT_ADMIN_URL: $INTERKIT_ADMIN_URL
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontproxy"
+      - "traefik.http.routers.bundler-${INTERKIT_IMAGE_TAG}.rule=Host(`${INTERKIT_BUNDLER_HOST}`)"
+      - "traefik.http.middlewares.bundler-${INTERKIT_IMAGE_TAG}.headers.accesscontrolalloworiginlist=*"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - frontproxy
+      - default
+
+networks:
+  frontproxy:
+    external: true
+
+volumes:
+  db-data:
+  #projects:
+  mediafiles:
+  credentials:

@@ -1,0 +1,39 @@
+name: Reviewer Docker smoke test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  reviewer-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build and start the reviewer stack
+        run: docker compose up --build -d
+      - name: Check the imported audioguide and HTTP routes
+        run: |
+          project=$(docker compose exec -T mongo mongosh --quiet --eval \
+            'db.getSiblingDB("meteor").projects.findOne({_id:"8HQbW3NPRFFdPR5Ni"})?.name')
+          test "$project" = audioguide_voegel
+          rows=$(docker compose exec -T mongo mongosh --quiet --eval \
+            'db.getSiblingDB("meteor").rows.countDocuments({projectId:"8HQbW3NPRFFdPR5Ni"})')
+          test "$rows" = 52
+          files=$(docker compose exec -T mongo mongosh --quiet --eval \
+            'db.getSiblingDB("meteor").mediafiles.countDocuments({"meta.projectId":"8HQbW3NPRFFdPR5Ni"})')
+          test "$files" = 59
+          curl --fail --silent --show-error --retry 30 --retry-delay 2 \
+            --resolve admin.localhost:80:127.0.0.1 http://admin.localhost/ > /dev/null
+          curl --fail --silent --show-error --retry 30 --retry-delay 2 \
+            --resolve app.localhost:80:127.0.0.1 \
+            http://app.localhost/app/8HQbW3NPRFFdPR5Ni/ > /dev/null
+      - name: Container logs
+        if: always()
+        run: docker compose logs --tail=100
+      - name: Stop containers
+        if: always()
+        run: docker compose down

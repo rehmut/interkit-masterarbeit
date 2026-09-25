@@ -2,6 +2,7 @@
 # OS / Editor
 # ----------------------
 .DS_Store
+*:Zone.Identifier
 Thumbs.db
 *.swp
 *.swo

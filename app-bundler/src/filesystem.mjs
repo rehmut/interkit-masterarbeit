@@ -46,6 +46,12 @@ async function ensureRepositories(projects) {
       } else {
         await setupNewRepository(project, template, gitRepository)
       }
+    } else if (!fs.existsSync(path.join(projectPath, '.git'))) {
+      // A project committed inside the parent Interkit repository has no nested
+      // .git directory after cloning. Initialize its local editing history.
+      await git.init({ fs, dir: projectPath });
+      await gitAddAll(projectPath);
+      await gitCommit(projectPath, 'Initial imported project');
     }
   }
 }

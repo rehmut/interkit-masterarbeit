@@ -1,135 +1,129 @@
-version: '3.2'
-
+# Local, editable review of the audioguide. Start with:
+# docker compose up --build -d
 services:
+  mongo:
+    image: mongo:6.0@sha256:8b6d8f5bbedb25cb73517b65cf99f13aeb75ad5b157a56c479287a840bbad3ac
+    command: ["mongod", "--replSet", "meteor", "--bind_ip_all"]
+    volumes:
+      - review-db:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  mongo-init:
+    image: mongo:6.0@sha256:8b6d8f5bbedb25cb73517b65cf99f13aeb75ad5b157a56c479287a840bbad3ac
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: ["sh", "/mongo-init.sh"]
+    volumes:
+      - ./docker/review/mongo-init.sh:/mongo-init.sh:ro
+    restart: "no"
 
   server:
-    image: interkit/server:${INTERKIT_IMAGE_TAG}
-    restart: always
     build:
-      context: ./
+      context: .
       dockerfile: Dockerfile.meteor-server
-      args:
-      - INTERKIT_IMAGE_TAG=${INTERKIT_IMAGE_TAG}
-    expose:
-      - 3000
-    volumes:
-      - mediafiles:/var/mediafiles
-      - credentials:/var/credentials
     depends_on:
-      - mongo
+      mongo-init:
+        condition: service_completed_successfully
     environment:
-      ROOT_URL: $INTERKIT_SERVER_URL
-      MONGO_URL: mongodb://mongo:27017/meteor
-      MONGO_OPLOG_URL: mongodb://mongo:27017/local?replicaSet=meteor&directConnection=true&retryWrites=true
+      ROOT_URL: http://api.localhost
+      MONGO_URL: mongodb://mongo:27017/meteor?replicaSet=meteor
+      MONGO_OPLOG_URL: mongodb://mongo:27017/local?replicaSet=meteor
       MEDIAFILES_PATH: /var/mediafiles
       WEBPUSH_CREDENTIALS_PATH: /var/credentials/webpush.json
-      PORT: 3000
-      BUNDLER_URL: $INTERKIT_BUNDLER_URL
-      BUNDLER_PASSWORD: $INTERKIT_BUNDLER_PASSWORD
-      ADMIN_PASSWORD: $INTERKIT_ADMIN_PASSWORD
-      INTERKIT_PLAYGROUND_RESET_TIMESTAMP: $INTERKIT_PLAYGROUND_RESET_TIMESTAMP
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=frontproxy"
-      - "traefik.http.routers.server-${INTERKIT_IMAGE_TAG}.rule=Host(`${INTERKIT_SERVER_HOST}`)"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-    networks:
-      - frontproxy
-      - default
-
-  mongo:
-    image: bitnami/mongodb:latest
-    restart: always
+      INTERKIT_SEED_ARCHIVE_PATH: /seed/audioguide
+      PORT: "3000"
+      BUNDLER_URL: http://app.localhost
+      BUNDLER_PASSWORD: ${INTERKIT_BUNDLER_PASSWORD:-local-review-bundler-password}
+      ADMIN_PASSWORD: ${INTERKIT_ADMIN_PASSWORD:-reviewer}
     volumes:
-      - db-data:/bitnami/mongodb
-    networks:
-      - default
-    environment:
-      MONGODB_REPLICA_SET_MODE: primary
-      MONGODB_REPLICA_SET_NAME: meteor
-      MONGODB_ADVERTISED_HOSTNAME: mongo
-      #MONGODB_ROOT_USER: root
-      #MONGODB_ROOT_PASSWORD: password123
-      #MONGODB_REPLICA_SET_KEY: replicasetkey123
-      ALLOW_EMPTY_PASSWORD: "yes"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"      
-      
-  admin:
-    image: interkit/admin:${INTERKIT_IMAGE_TAG}
-    restart: always
-    build:
-      context: ./
-      dockerfile: ./Dockerfile.svelte-admin
-      args:
-      - INTERKIT_IMAGE_TAG=${INTERKIT_IMAGE_TAG}
-    expose:
-      - 5000
-    environment:
-      INTERKIT_SERVER_WEBSOCKETS_URL: $INTERKIT_SERVER_WEBSOCKETS_URL
-      INTERKIT_SERVER_URL: $INTERKIT_SERVER_URL
-      INTERKIT_IMAGE_TAG: $INTERKIT_IMAGE_TAG
+      - review-media:/var/mediafiles
+      - review-credentials:/var/credentials
+      - ./repositories/projects/8HQbW3NPRFFdPR5Ni/static/archive:/seed/audioguide:ro
     labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=frontproxy"
-      - "traefik.http.routers.admin-${INTERKIT_IMAGE_TAG}.rule=Host(`${INTERKIT_ADMIN_HOST}`)"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"      
-    networks:
-      - frontproxy
-      - default
+      - traefik.enable=true
+      - traefik.http.routers.review-api.rule=Host(`api.localhost`)
+      - traefik.http.services.review-api.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
 
-  bundler:
-    image: interkit/bundler:${INTERKIT_IMAGE_TAG}
-    restart: always
+  admin:
     build:
-      context: ./
-      dockerfile: ./Dockerfile.app-bundler
-      args:
-      - INTERKIT_IMAGE_TAG=${INTERKIT_IMAGE_TAG}
-    expose:
-      - 4000
+      context: .
+      dockerfile: Dockerfile.svelte-admin
+    environment:
+      INTERKIT_SERVER_WEBSOCKETS_URL: ws://api.localhost/websocket
+      INTERKIT_SERVER_URL: http://api.localhost
+      INTERKIT_IMAGE_TAG: review
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.review-admin.rule=Host(`admin.localhost`)
+      - traefik.http.services.review-admin.loadbalancer.server.port=5000
+    restart: unless-stopped
+
+  project-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.app-bundler
+    working_dir: /var/repositories/projects/8HQbW3NPRFFdPR5Ni
+    command: ["sh", "-c", "npm ci && npm run build"]
     volumes:
       - ./repositories/projects:/var/repositories/projects
-    environment:
-      PORT: 4000
-      ADMIN_PASSWORD: $INTERKIT_ADMIN_PASSWORD
-      BUNDLER_PASSWORD: $INTERKIT_BUNDLER_PASSWORD
-      INTERKIT_BUNDLER_URL: $INTERKIT_BUNDLER_URL
-      INTERKIT_SERVER_WEBSOCKETS_URL: $INTERKIT_SERVER_WEBSOCKETS_URL
-      INTERKIT_SERVER_SERVERSIDE_WEBSOCKETS_URL: $INTERKIT_SERVER_SERVERSIDE_WEBSOCKETS_URL
-      INTERKIT_SERVER_URL: $INTERKIT_SERVER_URL
-      INTERKIT_ADMIN_URL: $INTERKIT_ADMIN_URL
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=frontproxy"
-      - "traefik.http.routers.bundler-${INTERKIT_IMAGE_TAG}.rule=Host(`${INTERKIT_BUNDLER_HOST}`)"
-      - "traefik.http.middlewares.bundler-${INTERKIT_IMAGE_TAG}.headers.accesscontrolalloworiginlist=*"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"      
-    networks:
-      - frontproxy
-      - default
+      - review-project-node-modules:/var/repositories/projects/8HQbW3NPRFFdPR5Ni/node_modules
+    restart: "no"
 
-networks:
-  frontproxy:
-    external: true
+  bundler:
+    build:
+      context: .
+      dockerfile: Dockerfile.app-bundler
+    depends_on:
+      server:
+        condition: service_healthy
+      project-build:
+        condition: service_completed_successfully
+    environment:
+      PORT: "4000"
+      ADMIN_PASSWORD: ${INTERKIT_ADMIN_PASSWORD:-reviewer}
+      BUNDLER_PASSWORD: ${INTERKIT_BUNDLER_PASSWORD:-local-review-bundler-password}
+      INTERKIT_BUNDLER_URL: http://app.localhost
+      INTERKIT_SERVER_WEBSOCKETS_URL: ws://api.localhost/websocket
+      INTERKIT_SERVER_SERVERSIDE_WEBSOCKETS_URL: ws://server:3000/websocket
+      INTERKIT_SERVER_URL: http://api.localhost
+      INTERKIT_ADMIN_URL: http://admin.localhost
+    volumes:
+      - ./repositories/projects:/var/repositories/projects
+      - review-project-node-modules:/var/repositories/projects/8HQbW3NPRFFdPR5Ni/node_modules
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.review-bundler.rule=Host(`app.localhost`)
+      - traefik.http.services.review-bundler.loadbalancer.server.port=4000
+      - traefik.http.middlewares.review-bundler-cors.headers.accesscontrolalloworiginlist=*
+    restart: unless-stopped
+
+  proxy:
+    image: traefik:v2.11@sha256:0d95e1fdcd3c43c8da981a2df58abb1e544693b6c7cce046fbe3a09fa79bb131
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - 127.0.0.1:80:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
 
 volumes:
-  db-data:
-  #projects:
-  mediafiles:
-  credentials:
+  review-db:
+  review-media:
+  review-credentials:
+  review-project-node-modules:
