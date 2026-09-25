@@ -68,8 +68,10 @@ Meteor.startup(() => {
 
   initUserActivity();
 
-  // install project templates
-  Meteor.call('project.rebuildTemplates')
+  // The reviewer stack only needs the committed audioguide project.
+  if (process.env.INTERKIT_SKIP_TEMPLATE_SEED !== 'true') {
+    Meteor.call('project.rebuildTemplates')
+  }
 
 });
 

@@ -37,6 +37,7 @@ services:
       MEDIAFILES_PATH: /var/mediafiles
       WEBPUSH_CREDENTIALS_PATH: /var/credentials/webpush.json
       INTERKIT_SEED_ARCHIVE_PATH: /seed/audioguide
+      INTERKIT_SKIP_TEMPLATE_SEED: "true"
       PORT: "3000"
       BUNDLER_URL: http://app.localhost
       BUNDLER_PASSWORD: ${INTERKIT_BUNDLER_PASSWORD:-local-review-bundler-password}
