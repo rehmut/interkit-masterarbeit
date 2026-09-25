@@ -47,6 +47,7 @@ services:
       - review-credentials:/var/credentials
       - ./repositories/projects/8HQbW3NPRFFdPR5Ni/static/archive:/seed/audioguide:ro
     labels:
+      - interkit.review=true
       - traefik.enable=true
       - traefik.http.routers.review-api.rule=Host(`api.localhost`)
       - traefik.http.services.review-api.loadbalancer.server.port=3000
@@ -67,6 +68,7 @@ services:
       INTERKIT_SERVER_URL: http://api.localhost
       INTERKIT_IMAGE_TAG: review
     labels:
+      - interkit.review=true
       - traefik.enable=true
       - traefik.http.routers.review-admin.rule=Host(`admin.localhost`)
       - traefik.http.services.review-admin.loadbalancer.server.port=5000
@@ -105,6 +107,7 @@ services:
       - ./repositories/projects:/var/repositories/projects
       - review-project-node-modules:/var/repositories/projects/8HQbW3NPRFFdPR5Ni/node_modules
     labels:
+      - interkit.review=true
       - traefik.enable=true
       - traefik.http.routers.review-bundler.rule=Host(`app.localhost`)
       - traefik.http.services.review-bundler.loadbalancer.server.port=4000
@@ -116,6 +119,7 @@ services:
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      - --providers.docker.constraints=Label(`interkit.review`,`true`)
       - --entrypoints.web.address=:80
     ports:
       - 127.0.0.1:80:80
